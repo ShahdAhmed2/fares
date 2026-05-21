@@ -50,10 +50,10 @@ func env(key, fallback string) string {
 
 func defaultNodes() []Node {
 	return []Node{
-		{ID: "master-1", Host: env("MASTER_HOST", "127.0.0.1"), Port: env("MASTER_PORT", "8888"), Priority: 4, CanPromote: true},
+		{ID: "master-1", Host: env("MASTER_HOST", "192.168.1.119"), Port: env("MASTER_PORT", "8888"), Priority: 4, CanPromote: true},
 		{ID: "worker-3", Host: env("WORKER3_HOST", "127.0.0.1"), Port: env("WORKER3_PORT", "8083"), Shard: "Assiut,Luxor", Priority: 3, CanPromote: false},
 		{ID: "worker-2", Host: env("WORKER2_HOST", "127.0.0.1"), Port: env("WORKER2_PORT", "8082"), Shard: "Alexandria", Priority: 2, CanPromote: false},
-		{ID: "worker-1", Host: env("WORKER1_HOST", "127.0.0.1"), Port: env("WORKER1_PORT", "8081"), Shard: "Cairo", Priority: 1, CanPromote: true},
+		{ID: "worker-1", Host: env("WORKER1_HOST", "192.168.1.155"), Port: env("WORKER1_PORT", "8081"), Shard: "Cairo", Priority: 1, CanPromote: true},
 	}
 }
 

@@ -121,12 +121,21 @@ const ts = () => new Date().toLocaleTimeString();
 
 let _reqs = [];
 let _listeners = [];
-const addReq = r => { _reqs = [..._reqs, { ...r, id: Date.now(), status: 'pending', time: ts() }]; _listeners.forEach(f => f([..._reqs])); };
-const updateReq = (id, status) => { _reqs = _reqs.map(r => r.id === id ? { ...r, status } : r); _listeners.forEach(f => f([..._reqs])); };
+const syncReqs = async () => {
+  try {
+    const r = await api.getRequests();
+    _reqs = Array.isArray(r) ? r : [];
+    _listeners.forEach(f => f([..._reqs]));
+  } catch (e) {}
+};
+setInterval(syncReqs, 3000);
+
+const addReq = async r => { await api.createRequest(r); await syncReqs(); };
+const updateReq = async (id, status) => { await api.updateRequest(id, status); await syncReqs(); };
 const useReqs = () => {
   const [reqs, setReqs] = useState(_reqs);
-  useEffect(() => { _listeners.push(setReqs); return () => { _listeners = _listeners.filter(f => f !== setReqs); }; }, []);
-  return reqs;
+  useEffect(() => { _listeners.push(setReqs); syncReqs(); return () => { _listeners = _listeners.filter(f => f !== setReqs); }; }, []);
+  return reqs || [];
 };
 
 function LoginPage({ onLogin }) {
@@ -482,9 +491,9 @@ function RequestInsert({ workerName }) {
   const [msg, setMsg] = useState('');
   const reqs = useReqs();
   const myReqs = reqs.filter(r => r.worker === workerName);
-  const send = () => {
+  const send = async () => {
     if (!form.name || !form.national_id) { setMsg('❌ Fill name and National ID'); return; }
-    addReq({ ...form, worker: workerName });
+    await addReq({ ...form, worker: workerName });
     setMsg('✅ Request sent to Master! Waiting for approval...');
     setForm({ name: '', national_id: '', phone: '', email: '', gender: 'Male', birth_date: '1990-01-01', city: 'Cairo', address: '', account_type: 'Savings', balance: 0 });
   };
@@ -528,11 +537,11 @@ function Approvals() {
     try {
       const r = await api.createClient({ ...req, balance: parseFloat(req.balance) || 0 });
       if (r.error) { setMsg('❌ ' + r.error); return; }
-      updateReq(req.id, 'approved');
+      await updateReq(req.id, 'approved');
       setMsg(`✅ Approved & inserted: ${req.name}`);
     } catch (e) { setMsg('❌ ' + e.message); }
   };
-  const reject = req => { updateReq(req.id, 'rejected'); setMsg(`❌ Rejected: ${req.name}`); };
+  const reject = async req => { await updateReq(req.id, 'rejected'); setMsg(`❌ Rejected: ${req.name}`); };
   const pending = reqs.filter(r => r.status === 'pending');
   const done = reqs.filter(r => r.status !== 'pending');
   return (<>

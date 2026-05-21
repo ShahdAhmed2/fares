@@ -1,5 +1,5 @@
 package api
-
+import "sync"
 import (
 	"fmt"
     "log"
@@ -61,6 +61,12 @@ func RegisterRoutes(r *gin.Engine, qe *query.Engine, rm *replication.Manager, hc
 	r.GET("/data/stats", h.GetStats)
 	r.POST("/data/clients", h.CreateClient)
 	r.DELETE("/data/clients/:id", h.DeleteClient)
+
+	// Requests APIs
+	r.POST("/requests", h.CreateRequest)
+	r.GET("/requests", h.GetRequests)
+	r.PUT("/requests/:id", h.UpdateRequest)
+
 
 	// Table management
 	r.GET("/tables", h.GetTables)
@@ -316,9 +322,9 @@ func (h *Handler) GetClients(c *gin.Context) {
 	if search != "" {
 		countSQL += " AND (name LIKE '%" + search + "%' OR email LIKE '%" + search + "%')"
 	}
-	countResult, _ := h.qe.Execute(countSQL)
+	countResult, err := h.qe.Execute(countSQL)
 	total := int64(0)
-	if len(countResult.Rows) > 0 && len(countResult.Rows[0]) > 0 {
+	if err == nil && countResult != nil && len(countResult.Rows) > 0 && len(countResult.Rows[0]) > 0 {
 		if v, ok := countResult.Rows[0][0].(int64); ok {
 			total = v
 		}
@@ -332,28 +338,34 @@ func (h *Handler) GetStats(c *gin.Context) {
 	stats := map[string]interface{}{}
 
 	// Total clients
-	r, _ := h.qe.Execute("SELECT COUNT(*) FROM client")
-	if len(r.Rows) > 0 {
+	r, err := h.qe.Execute("SELECT COUNT(*) FROM client")
+	if err == nil && r != nil && len(r.Rows) > 0 {
 		stats["total_clients"] = r.Rows[0][0]
 	}
 
 	// Total balance
-	r, _ = h.qe.Execute("SELECT SUM(balance) FROM client")
-	if len(r.Rows) > 0 {
+	r, err = h.qe.Execute("SELECT SUM(balance) FROM client")
+	if err == nil && r != nil && len(r.Rows) > 0 {
 		stats["total_balance"] = r.Rows[0][0]
 	}
 
 	// By city
-	r, _ = h.qe.Execute("SELECT city, COUNT(*), SUM(balance), AVG(balance) FROM client GROUP BY city")
-	stats["by_city"] = gin.H{"columns": r.Columns, "rows": r.Rows}
+	r, err = h.qe.Execute("SELECT city, COUNT(*), SUM(balance), AVG(balance) FROM client GROUP BY city")
+	if err == nil && r != nil {
+		stats["by_city"] = gin.H{"columns": r.Columns, "rows": r.Rows}
+	}
 
 	// By account type
-	r, _ = h.qe.Execute("SELECT account_type, COUNT(*), SUM(balance) FROM client GROUP BY account_type")
-	stats["by_account_type"] = gin.H{"columns": r.Columns, "rows": r.Rows}
+	r, err = h.qe.Execute("SELECT account_type, COUNT(*), SUM(balance) FROM client GROUP BY account_type")
+	if err == nil && r != nil {
+		stats["by_account_type"] = gin.H{"columns": r.Columns, "rows": r.Rows}
+	}
 
 	// Gender split
-	r, _ = h.qe.Execute("SELECT gender, COUNT(*) FROM client GROUP BY gender")
-	stats["by_gender"] = gin.H{"columns": r.Columns, "rows": r.Rows}
+	r, err = h.qe.Execute("SELECT gender, COUNT(*) FROM client GROUP BY gender")
+	if err == nil && r != nil {
+		stats["by_gender"] = gin.H{"columns": r.Columns, "rows": r.Rows}
+	}
 
 	// Shards
 	stats["shards"] = h.qe.GetShardStats()
@@ -442,6 +454,62 @@ func (h *Handler) DropTable(c *gin.Context) {
 	}
 	go h.rm.Replicate("DROP_TABLE", sql)
 	c.JSON(http.StatusOK, result)
+}
+
+// Request Data structures and handlers
+var (
+	globalReqLock sync.RWMutex
+	globalReqs    []map[string]interface{}
+	globalReqID   int64 = 1
+)
+
+func (h *Handler) CreateRequest(c *gin.Context) {
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	globalReqLock.Lock()
+	req["id"] = globalReqID
+	globalReqID++
+	req["status"] = "pending"
+	req["time"] = time.Now().Format("15:04:05")
+	globalReqs = append(globalReqs, req)
+	globalReqLock.Unlock()
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handler) GetRequests(c *gin.Context) {
+	globalReqLock.RLock()
+	defer globalReqLock.RUnlock()
+	if globalReqs == nil {
+		c.JSON(http.StatusOK, []map[string]interface{}{})
+		return
+	}
+	c.JSON(http.StatusOK, globalReqs)
+}
+
+func (h *Handler) UpdateRequest(c *gin.Context) {
+	idStr := c.Param("id")
+	var update struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&update); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	globalReqLock.Lock()
+	defer globalReqLock.Unlock()
+	
+	for i, req := range globalReqs {
+		if fmt.Sprintf("%v", req["id"]) == idStr {
+			globalReqs[i]["status"] = update.Status
+			break
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func extractOp(upper string) string {

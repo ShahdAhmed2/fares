@@ -1,4 +1,4 @@
-const MASTER = process.env.REACT_APP_MASTER_URL || 'http://localhost:8888';
+const MASTER = process.env.REACT_APP_MASTER_URL || 'http://192.168.1.119:8888';
 
 async function req(method, path, body) {
   const res = await fetch(`${MASTER}${path}`, {
@@ -25,6 +25,9 @@ export const api = {
   getClients:      (p)     => req('GET',  `/data/clients?${new URLSearchParams(p || {})}`),
   createClient:    (d)     => req('POST', '/data/clients', d),
   deleteClient:    (id)    => req('DELETE', `/data/clients/${id}`),
+  createRequest:   (d)     => req('POST', '/requests', d),
+  getRequests:     ()      => req('GET',  '/requests'),
+  updateRequest:   (id, s) => req('PUT',  `/requests/${id}`, { status: s }),
   getStats:        ()      => req('GET',  '/data/stats'),
   getTables:       ()      => req('GET',  '/tables'),
   createTable:     (sql)   => req('POST', '/tables', { sql }),

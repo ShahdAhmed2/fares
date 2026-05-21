@@ -39,6 +39,7 @@ type ShardInfo struct {
 }
 
 // ShardMap defines which cities belong to which worker nodes
+// ID shard
 var ShardMap = map[string]string{
 	"Cairo":      "worker-1",
 	"Alexandria": "worker-2",
