@@ -1,0 +1,24 @@
+{
+  "name": "distributed-db-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.12.2",
+    "react-router-dom": "^6.22.3",
+    "socket.io-client": "^4.7.5",
+    "axios": "^1.6.8",
+    "lucide-react": "^0.363.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build"
+  },
+  "proxy": "http://localhost:8888",
+  "browserslist": {
+    "production": [">0.2%", "not dead"],
+    "development": ["last 1 chrome version"]
+  }
+}

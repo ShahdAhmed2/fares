@@ -1,0 +1,16 @@
+{
+  "name": "worker3",
+  "version": "1.0.0",
+  "description": "Distributed DB Worker 3 — Node.js/Express — Assiut+Luxor Shard",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "socket.io": "^4.7.5"
+  }
+}
