@@ -166,6 +166,13 @@ func (c *Coordinator) checkOriginalMasterRecovery() {
 
 // ExecuteFailback contains the thread-safe logic to step down and return leadership.
 func (c *Coordinator) ExecuteFailback(masterNode cluster.Node) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.promoter == nil || !c.promoter.IsRunning() {
+		return
+	}
+
 	if err := c.promoter.Stop(); err != nil {
 		log.Printf("[FAILOVER] Failed to stop promoter during failback: %v", err)
 		return
@@ -343,11 +350,16 @@ func (c *Coordinator) broadcastNewMaster(term int, leaderID, host, port string) 
 		"master_port": port,
 	})
 	for _, n := range cluster.Global().Nodes() {
-		if n.ID == c.selfID || n.ID == "master-1" {
+		if n.ID == c.selfID {
 			continue
 		}
-		url := fmt.Sprintf("http://%s:%s/election/new-master", n.Host, n.Port)
-		c.httpClient.Post(url, "application/json", bytes.NewReader(body))
+		go func(node cluster.Node) {
+			url := fmt.Sprintf("http://%s:%s/election/new-master", node.Host, node.Port)
+			resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(body))
+			if err == nil {
+				resp.Body.Close()
+			}
+		}(n)
 	}
 }
 

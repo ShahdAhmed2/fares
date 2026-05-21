@@ -270,6 +270,11 @@ func replicate(c *gin.Context) {
 		return
 	}
 
+	if req.Origin != cluster.Global().GetLeaderID() {
+		c.JSON(403, gin.H{"status": "rejected", "reason": "sender is not the active leader"})
+		return
+	}
+
 	log.Printf("[WORKER:%s] Replicating %s from %s", nodeID, req.Op, req.Origin)
 	_, err := db.Exec(req.SQL)
 	if err != nil {

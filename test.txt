@@ -1,0 +1,34 @@
+cd master
+go run ./cmd/main.go
+
+cd master
+go run ./cmd/worker1
+
+cd worker2
+pip install -r requirements.txt
+python app.py
+
+cd worker3
+npm install
+node index.js
+
+cd frontend
+npm install
+npm start
+
+INSERT INTO client(name,national_id,phone,email,gender,birth_date,city,address,account_type,balance,created_at) VALUES('Sara Ahmed','33333333333333','01033333333','sara@test.com','Female','1998-03-20','Assiut','Nile St','Current',120000,date('now'))
+
+UPDATE client SET balance = 200000 WHERE national_id = '33333333333333'
+
+DELETE FROM client WHERE national_id = '33333333333333'
+
+
+
+Show all clients from Assiut
+Top 10 richest clients
+Count customers in Cairo
+Show female clients
+Show clients with balance greater than 500000
+Average balance by city
+Show savings accounts
+Total balance in Alexandria

@@ -112,6 +112,9 @@ func (h *Handler) Status(c *gin.Context) {
 
 // Query executes a SQL query (master enforces write-only access)
 func (h *Handler) Query(c *gin.Context) {
+	if !h.assertIsLeader(c) {
+		return
+	}
 	var req struct {
 		SQL string `json:"sql" binding:"required"`
 	}
@@ -271,6 +274,9 @@ func (h *Handler) TriggerFailover(c *gin.Context) {
 
 // ReceiveReplicate handles write requests FROM workers (slave wants to write)
 func (h *Handler) ReceiveReplicate(c *gin.Context) {
+	if !h.assertIsLeader(c) {
+		return
+	}
 	var req replication.ReplicateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -375,6 +381,9 @@ func (h *Handler) GetStats(c *gin.Context) {
 
 // CreateClient inserts a new client
 func (h *Handler) CreateClient(c *gin.Context) {
+	if !h.assertIsLeader(c) {
+		return
+	}
 	var client struct {
 		Name        string  `json:"name"`
 		NationalID  string  `json:"national_id"`
@@ -409,6 +418,9 @@ func (h *Handler) CreateClient(c *gin.Context) {
 
 // DeleteClient deletes a client by ID
 func (h *Handler) DeleteClient(c *gin.Context) {
+	if !h.assertIsLeader(c) {
+		return
+	}
 	id := c.Param("id")
 	sql := "DELETE FROM client WHERE id = " + id
 	result, err := h.qe.Execute(sql)
@@ -427,6 +439,9 @@ func (h *Handler) GetTables(c *gin.Context) {
 
 // CreateTable creates a new table dynamically
 func (h *Handler) CreateTable(c *gin.Context) {
+	if !h.assertIsLeader(c) {
+		return
+	}
 	var req struct {
 		SQL string `json:"sql" binding:"required"`
 	}
@@ -445,6 +460,9 @@ func (h *Handler) CreateTable(c *gin.Context) {
 
 // DropTable drops a table
 func (h *Handler) DropTable(c *gin.Context) {
+	if !h.assertIsLeader(c) {
+		return
+	}
 	name := c.Param("name")
 	sql := "DROP TABLE IF EXISTS " + name
 	result, err := h.qe.Execute(sql)
@@ -524,6 +542,19 @@ func extractOp(upper string) string {
 
 func formatFloat(f float64) string {
 	return fmt.Sprintf("%f", f)
+}
+
+func (h *Handler) assertIsLeader(c *gin.Context) bool {
+	leaderID := cluster.Global().GetLeaderID()
+	if leaderID != h.nodeID {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":      "node is not the active master leader",
+			"leader_id":  leaderID,
+			"master_url": cluster.Global().MasterURL(),
+		})
+		return false
+	}
+	return true
 }
 
 func init() {

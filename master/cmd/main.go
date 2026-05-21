@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,13 +32,30 @@ func main() {
 	cluster.Init(nodeID, host, port)
 
 	ps := election.LoadPersistedState()
-	remoteTerm := fetchMaxClusterTerm()
-	if remoteTerm > ps.Term {
-		ps.Term = remoteTerm
-		log.Printf("[MASTER] Adopting cluster term %d (newer than local persisted)", remoteTerm)
+	leaderState, err := fetchClusterLeaderState()
+	var term int
+	var currentLeader string
+	var mHost, mPort string
+
+	if err == nil && leaderState.LeaderID != "" && leaderState.LeaderID != "master-1" {
+		term = leaderState.Term
+		currentLeader = leaderState.LeaderID
+		mHost = leaderState.MasterHost
+		mPort = leaderState.MasterPort
+		log.Printf("[MASTER] Adopting active cluster term %d and leader %s (%s:%s)", term, currentLeader, mHost, mPort)
+	} else {
+		term = ps.Term
+		if err == nil && leaderState.Term > term {
+			term = leaderState.Term
+		}
+		currentLeader = nodeID
+		mHost = host
+		mPort = port
+		log.Printf("[MASTER] No active worker-promoted leader found. Starting as primary leader with term %d", term)
 	}
-	cluster.Global().SetMaster(nodeID, host, port, ps.Term)
-	_ = election.SavePersistedState(election.PersistedState{Term: ps.Term, LeaderID: nodeID})
+
+	cluster.Global().SetMaster(currentLeader, mHost, mPort, term)
+	_ = election.SavePersistedState(election.PersistedState{Term: term, LeaderID: currentLeader})
 
 	log.Printf("[MASTER] Starting node %s on %s:%s (term %d)", nodeID, host, port, ps.Term)
 
@@ -104,9 +122,17 @@ func main() {
 	srv.Shutdown(shutCtx)
 }
 
-func fetchMaxClusterTerm() int {
+type leaderInfo struct {
+	LeaderID   string
+	MasterHost string
+	MasterPort string
+	Term       int
+}
+
+func fetchClusterLeaderState() (leaderInfo, error) {
 	client := &http.Client{Timeout: 2 * time.Second}
-	maxT := 0
+	var bestInfo leaderInfo
+	found := false
 	for _, n := range cluster.Global().Nodes() {
 		if n.ID == "master-1" {
 			continue
@@ -119,13 +145,40 @@ func fetchMaxClusterTerm() int {
 		var body struct {
 			Status map[string]interface{} `json:"status"`
 		}
-		json.NewDecoder(resp.Body).Decode(&body)
+		err = json.NewDecoder(resp.Body).Decode(&body)
 		resp.Body.Close()
-		if t, ok := body.Status["term"].(float64); ok && int(t) > maxT {
-			maxT = int(t)
+		if err != nil {
+			continue
+		}
+		termVal, _ := body.Status["term"].(float64)
+		term := int(termVal)
+		leaderID, _ := body.Status["leader_id"].(string)
+		masterURL, _ := body.Status["master_url"].(string)
+
+		mHost, mPort := "", ""
+		if masterURL != "" {
+			cleanURL := strings.TrimPrefix(masterURL, "http://")
+			parts := strings.Split(cleanURL, ":")
+			if len(parts) == 2 {
+				mHost = parts[0]
+				mPort = parts[1]
+			}
+		}
+
+		if term > bestInfo.Term {
+			bestInfo = leaderInfo{
+				LeaderID:   leaderID,
+				MasterHost: mHost,
+				MasterPort: mPort,
+				Term:       term,
+			}
+			found = true
 		}
 	}
-	return maxT
+	if !found {
+		return leaderInfo{}, fmt.Errorf("no workers reachable")
+	}
+	return bestInfo, nil
 }
 
 func getEnv(key, fallback string) string {
