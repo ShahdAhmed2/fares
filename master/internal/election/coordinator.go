@@ -14,25 +14,25 @@ import (
 )
 
 const (
-	masterPingInterval   = 3 * time.Second
-	masterDeadThreshold  = 10 * time.Second
-	electionCooldown     = 5 * time.Second
+	masterPingInterval  = 3 * time.Second
+	masterDeadThreshold = 10 * time.Second
+	electionCooldown    = 5 * time.Second
 )
 
 // Coordinator watches the master and runs automatic bully election + promotion.
 type Coordinator struct {
-	selfID      string
-	selfHost    string
-	selfPort    string
-	masterPort  string
-	workerMode  bool
-	httpClient  *http.Client
-	mu          sync.Mutex
+	selfID       string
+	selfHost     string
+	selfPort     string
+	masterPort   string
+	workerMode   bool
+	httpClient   *http.Client
+	mu           sync.Mutex
 	lastMasterOK time.Time
-	masterDead  bool
+	masterDead   bool
 	lastElection time.Time
-	promoter    Promoter
-	onPromoted  func()
+	promoter     Promoter
+	onPromoted   func()
 }
 
 // NewCoordinator creates a failover coordinator for a worker or standby master.
@@ -73,6 +73,12 @@ func (c *Coordinator) checkMaster() {
 		c.lastMasterOK = time.Now()
 		c.masterDead = false
 		c.mu.Unlock()
+		// update
+
+		if c.selfID != "master-1" {
+			c.checkOriginalMasterRecovery()
+		}
+
 		return
 	}
 
@@ -137,6 +143,40 @@ func (c *Coordinator) validateRecoveredMaster() {
 func (c *Coordinator) postStepDown(masterURL string, term int) {
 	body, _ := json.Marshal(map[string]interface{}{"term": term})
 	c.httpClient.Post(masterURL+"/election/step-down", "application/json", bytes.NewReader(body))
+}
+
+// update
+func (c *Coordinator) checkOriginalMasterRecovery() {
+	masterNode, ok := cluster.Global().NodeByID("master-1")
+	if !ok {
+		return
+	}
+
+	url := fmt.Sprintf("http://%s:%s/heartbeat", masterNode.Host, masterNode.Port)
+	resp, err := c.httpClient.Get(url)
+
+	if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+		resp.Body.Close()
+		log.Printf("[FAILOVER] Original master (master-1) is back online. Initiating failback...")
+		c.ExecuteFailback(masterNode)
+	} else if resp != nil {
+		resp.Body.Close()
+	}
+}
+
+// ExecuteFailback contains the thread-safe logic to step down and return leadership.
+func (c *Coordinator) ExecuteFailback(masterNode cluster.Node) {
+	if err := c.promoter.Stop(); err != nil {
+		log.Printf("[FAILOVER] Failed to stop promoter during failback: %v", err)
+		return
+	}
+
+	newTerm := cluster.Global().GetTerm() + 1
+	cluster.Global().SetMaster("master-1", masterNode.Host, masterNode.Port, newTerm)
+	_ = SavePersistedState(PersistedState{Term: newTerm, LeaderID: "master-1"})
+
+	c.broadcastNewMaster(newTerm, "master-1", masterNode.Host, masterNode.Port)
+	log.Printf("[FAILOVER] Stepped down safely. master-1 is the leader again.")
 }
 
 // runAutomaticElection executes bully election across workers (no UI).

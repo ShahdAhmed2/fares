@@ -82,4 +82,19 @@ func RegisterHandlers(r *gin.Engine, deps *HandlerDeps) {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+
+	r.POST("/election/failback", func(c *gin.Context) {
+		if deps != nil && deps.Coordinator != nil && deps.Promoter != nil {
+			if deps.Promoter.IsRunning() && cluster.Global().SelfID() != "master-1" {
+				masterNode, ok := cluster.Global().NodeByID("master-1")
+				if ok {
+					log.Printf("[FAILOVER] Explicit failback requested via API.")
+					go deps.Coordinator.ExecuteFailback(masterNode)
+					c.JSON(http.StatusOK, gin.H{"status": "failback_initiated", "target": "master-1"})
+					return
+				}
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ignored", "reason": "not_promoted_master_or_invalid_state"})
+	})
 }

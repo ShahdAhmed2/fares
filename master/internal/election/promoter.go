@@ -4,4 +4,6 @@ package election
 type Promoter interface {
 	IsRunning() bool
 	Start(nodeID, port, dbPath string, term int) error
+	// update
+	Stop() error
 }
